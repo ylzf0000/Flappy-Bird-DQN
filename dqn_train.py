@@ -37,7 +37,6 @@ class Agent_DQN:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.flappy_bird_env = gymnasium.make("FlappyBird-v0", render_mode="human", use_lidar=True)
         self.memory = ReplayMemory(args.replay_memory_size)  # init some parameters
-        self.time_step = 0
         # 有epsilon的概率，随机选择一个动作，1-epsilon的概率通过网络输出的Q（max）值选择动作
         self.epsilon = args.epsilon_start
         # 当前值网络, 目标网络
@@ -47,7 +46,7 @@ class Agent_DQN:
         # 加载训练好的模型，在训练的模型基础上继续训练
         self.load_model()
         # 使用均方误差作为损失函数
-        self.loss_func = nn.MSELoss()
+        self.criterion = nn.MSELoss()
         self.optimizer = torch.optim.Adam(self.policy_net.parameters(), lr=args.learning_rate)
 
     def save_model(self):
@@ -80,7 +79,7 @@ class Agent_DQN:
         target_q = rewards + self.args.gamma * next_q * (1 - dones)
 
         # 计算损失
-        loss = self.loss_func(current_q.squeeze(), target_q)
+        loss = self.criterion(current_q.squeeze(), target_q)
 
         # 反向传播
         self.optimizer.zero_grad()
@@ -112,6 +111,7 @@ class Agent_DQN:
 
     def train(self):
         env = self.flappy_bird_env
+        time_step = 0
         for episode in range(1000):
             state, _ = self.flappy_bird_env.reset()
             total_reward = 0
@@ -135,18 +135,18 @@ class Agent_DQN:
                     self.train_one_batch()
 
                 # 更新目标网络
-                if episode % self.args.update_steps == 0:
-                    self.target_net.load_state_dict(self.policy_net.state_dict())
+                # if episode % self.args.update_steps == 0:
+                #     self.target_net.load_state_dict(self.policy_net.state_dict())
                 # 每隔UPDATE_TIME轮次，用训练的网络的参数来更新target网络的参数
-                if self.time_step % self.args.update_steps == 0:
+                if time_step % self.args.update_steps == 0:
                     self.target_net.load_state_dict(self.policy_net.state_dict())
                     self.save_model()
 
                 # 衰减ε
                 self.epsilon = max(self.args.epsilon_end, self.epsilon * self.args.epsilon_decay)
+                time_step += 1
+                print(f"TimeStep: {time_step}, Episode: {episode},  Reward: {total_reward}, Epsilon: {self.epsilon:.2f}")
 
-            # episode_rewards.append(total_reward)
-            # print(f"Episode {episode}, Reward: {total_reward}, Epsilon: {epsilon:.2f}")
 
     def get_action(self, env, state, greedy=False):
         # 选择动作（ε-greedy）

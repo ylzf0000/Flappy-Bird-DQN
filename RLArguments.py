@@ -28,19 +28,15 @@ class RLArguments:
     mode: str = "train" # 训练还是玩
     model_class: str = "SiglipBertMMMoCoV2" # 网络类
     load_model_checkpoint: str = None
-    save_model_checkpoint: str = None
+    save_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model.pth"
     mixed_precision: str = None
-    actions: int = 2
     gamma: float = 0.99  # decay rate of past observations
     train_steps: int = 5000000 # 训练步数
-    observe_steps: int = 200
     batch_size: int = 64
     replay_memory_size: int = 10000
-    epsilon_start: float = 0.5
-    epsilon_end: float = 0.0001
-    epsilon_decay = 0.9995
-    window_width:int = 80
-    window_height:int = 80
+    epsilon_start: float = 1.0
+    epsilon_end: float = 0.001
+    epsilon_decay = 0.999999
     update_steps:int = 1000
     learning_rate: float = 1e-4
 
