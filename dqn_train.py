@@ -1,8 +1,8 @@
 import os, sys, random
 from collections import deque
-import numpy as np
-import torch
-import torch.nn as nn
+from dataclasses import asdict
+import wandb
+
 from RLArguments import get_argparser_for_model_arguments, RLArguments
 import flappy_bird_gymnasium
 import gymnasium
@@ -26,22 +26,45 @@ class ReplayMemory:
 
     def __len__(self):
         return len(self.memory)
+
     def size(self):
         return len(self.memory)
 
 
-class Agent_DQN:
+class MultiFrameState:
+    def __init__(self, capacity):
+        self.memory = deque(maxlen=capacity)
+
+    def push(self, state):
+        while len(self.memory) < self.memory.maxlen:
+            self.memory.append(state)
+
+    def tolist(self):
+        while len(self.memory) < self.memory.maxlen:
+            self.memory.append(self.memory[-1])
+        return np.array(list(self.memory))
+
+    def __len__(self):
+        return len(self.memory)
+
+    def size(self):
+        return len(self.memory)
+
+
+class AgentDQN:
     def __init__(self, args: RLArguments):
-        self.current_state = None
         self.args = args
+        self.frame_counter = 0
+        self.current_state = None
+        self.tau = self.args.tau_start
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.flappy_bird_env = gymnasium.make("FlappyBird-v0", render_mode="human", use_lidar=True)
         self.memory = ReplayMemory(args.replay_memory_size)  # init some parameters
         # 有epsilon的概率，随机选择一个动作，1-epsilon的概率通过网络输出的Q（max）值选择动作
-        self.epsilon = args.epsilon_start
+        # self.epsilon = args.epsilon_start
         # 当前值网络, 目标网络
-        self.policy_net = DeepNetWorkV1().to(self.device)
-        self.target_net = DeepNetWorkV1().to(self.device)
+        self.policy_net = DeepNetWorkV2(layer_num=2, seq_len=self.args.frames).to(self.device)
+        self.target_net = DeepNetWorkV2(layer_num=2, seq_len=self.args.frames).to(self.device)
         self.target_net.eval()
         # 加载训练好的模型，在训练的模型基础上继续训练
         self.load_model()
@@ -74,24 +97,30 @@ class Agent_DQN:
         dones = torch.FloatTensor(dones).to(self.device)
 
         # 计算Q值
-        current_q = self.policy_net(states).gather(1, actions.unsqueeze(1))
+        current_q: torch.tensor = self.policy_net(states).gather(1, actions.unsqueeze(1))
         next_q = self.target_net(next_states).max(1)[0].detach()
-        target_q = rewards + self.args.gamma * next_q * (1 - dones)
+        target_q: torch.tensor = rewards + self.args.gamma * next_q * (1 - dones)
 
         # 计算损失
         loss = self.criterion(current_q.squeeze(), target_q)
+
+        wandb.log({
+            "loss": loss,
+            "current_q": current_q.mean(),
+            "target_q": target_q.mean(),
+            "delta_q": target_q.mean() - current_q.mean(),
+            "lr": self.optimizer.param_groups[0]['lr']
+        })
 
         # 反向传播
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
 
-
-
     def run(self):
         if self.args.mode == 'train':
             self.train()
-        if self.args.mode == 'play':
+        if self.args.mode == 'test':
             self.test()
 
     def test(self):
@@ -99,64 +128,110 @@ class Agent_DQN:
         state, _ = self.flappy_bird_env.reset()
         total_reward = 0
         terminated = False
-
+        states_after = MultiFrameState(self.args.frames)
+        states_after.push(state)
         while not terminated:
-            action = self.get_action(env, state, greedy=True)
+            with torch.no_grad():
+                state_tensor = torch.FloatTensor(np.array(states_after.tolist())).unsqueeze(0).to(self.device)
+                q_values = self.policy_net(state_tensor)
+                action = q_values.argmax().item()
 
             # 执行动作
-            next_state, reward, terminated, truncated, info, done = env.step(action)
+            next_state, reward, terminated, info, done = env.step(action)
             total_reward += reward
-            # 更新状态
-            state = next_state
+
+            states_after.push(next_state)
 
     def train(self):
+        self.wandb = wandb.init(
+            project="AgentDQN",
+            config=asdict(self.args),
+        )
         env = self.flappy_bird_env
-        time_step = 0
-        for episode in range(1000):
+        global_time_step = 0
+        import copy
+        from tqdm import tqdm
+        for episode in tqdm(range(100000)):
             state, _ = self.flappy_bird_env.reset()
             total_reward = 0
+            self.frame_counter = 0
+            local_time_step = 0
             terminated = False
-
+            states = MultiFrameState(self.args.frames)
+            states.push(state)
             while not terminated:
-                action = self.get_action(env, state)
+                action = self.get_action_softmax(env, states.tolist())
 
                 # 执行动作
-                next_state, reward, terminated,info,done = env.step(action)
+                next_state, reward, terminated, _, info = env.step(action)
+                print(f'reward: {reward}, terminated: {terminated}')
                 total_reward += reward
+                states_after = copy.deepcopy(states)
+                states_after.push(next_state)
 
                 # 存储经验
-                self.memory.push(state, action, reward, next_state, terminated)
-
-                # 更新状态
-                state = next_state
+                self.memory.push(states.tolist(), action, reward, states_after.tolist(), terminated)
+                states = states_after
 
                 # 训练网络（当经验足够时）
                 if self.memory.size() >= self.args.batch_size:
                     self.train_one_batch()
 
-                # 更新目标网络
-                # if episode % self.args.update_steps == 0:
-                #     self.target_net.load_state_dict(self.policy_net.state_dict())
-                # 每隔UPDATE_TIME轮次，用训练的网络的参数来更新target网络的参数
-                if time_step % self.args.update_steps == 0:
+                if global_time_step % self.args.update_steps == 0:
                     self.target_net.load_state_dict(self.policy_net.state_dict())
                     self.save_model()
 
                 # 衰减ε
-                self.epsilon = max(self.args.epsilon_end, self.epsilon * self.args.epsilon_decay)
-                time_step += 1
-                print(f"TimeStep: {time_step}, Episode: {episode},  Reward: {total_reward}, Epsilon: {self.epsilon:.2f}")
+                # self.epsilon = max(self.args.epsilon_end, self.epsilon * self.args.epsilon_decay)
+                global_time_step += 1
+                local_time_step += 1
+                self.wandb.log({
+                    "global_time_step": global_time_step,
+                    "local_time_step": local_time_step,
+                    "episode": episode,
+                    "total_reward": total_reward,
+                    "reward": reward,
+                    # "epsilon": self.epsilon,
+                })
+                # print(f"TimeStep: {global_time_step}, Episode: {episode},  Reward: {total_reward}, Epsilon: {self.epsilon:.2f}")
 
+    # def get_action(self, env, state):
+    #     self.frame_counter += 1
+    #     if self.frame_counter % self.args.decision_interval != 0:
+    #         return 0  # 非决策帧不跳跃
+    #
+    #     # 选择动作（ε-greedy）
+    #     r = np.random.rand()
+    #     if r < self.epsilon:
+    #         action = env.action_space.sample()  # 随机探索
+    #     else:
+    #         with torch.no_grad():
+    #             state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+    #             q_values = self.policy_net(state_tensor)
+    #             action = q_values.argmax().item()
+    #     return action
 
-    def get_action(self, env, state, greedy=False):
-        # 选择动作（ε-greedy）
-        if not greedy or np.random.rand() < self.epsilon:
-            action = env.action_space.sample()  # 随机探索
-        else:
-            with torch.no_grad():
-                state_tensor = torch.FloatTensor(state).unsqueeze(0)
-                q_values = self.policy_net(state_tensor)
-                action = q_values.argmax().item()
+    def get_action_softmax(self, env, state):
+        self.frame_counter += 1
+        if self.frame_counter % self.args.decision_interval != 0:
+            return 0  # 非决策帧不跳跃
+
+        with torch.no_grad():
+            state_tensor = torch.FloatTensor(np.array(state)).unsqueeze(0).to(self.device)
+            q_values = self.policy_net(state_tensor)
+
+        # 计算Boltzmann概率
+        probabilities = torch.softmax(q_values / self.tau, dim=-1)
+        # print("action_probabilities", probabilities)
+        self.wandb.log({
+            "tau": self.tau
+        })
+
+        # 按概率分布选择动作
+        action = torch.multinomial(probabilities, 1).item()
+
+        # 衰减温度
+        self.tau = max(self.args.tau_end, self.tau * self.args.tau_decay)
         return action
 
 
@@ -164,7 +239,7 @@ def main():
     parser = get_argparser_for_model_arguments()
     args = parser.parse_args()
     args = RLArguments(**vars(args))
-    agent = Agent_DQN(args)
+    agent = AgentDQN(args)
     agent.run()
 
 

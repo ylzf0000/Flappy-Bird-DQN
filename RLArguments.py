@@ -5,6 +5,7 @@ from email.policy import default
 from optparse import OptionParser
 from typing import Type, Any
 
+
 # ACTIONS = 2  # number of valid actions
 # GAMMA = 0.99  # decay rate of past observations
 # # 前OBSERVE轮次，不对网络进行训练，只是收集数据，存到记忆库中
@@ -25,22 +26,25 @@ from typing import Type, Any
 
 @dataclass
 class RLArguments:
-    mode: str = "train" # 训练还是玩
-    model_class: str = "SiglipBertMMMoCoV2" # 网络类
-    load_model_checkpoint: str = None
+    mode: str = "train"  # 训练还是玩
+    model_class: str = "SiglipBertMMMoCoV2"  # 网络类
+    load_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model.pth"
     save_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model.pth"
     mixed_precision: str = None
-    gamma: float = 0.99  # decay rate of past observations
-    train_steps: int = 5000000 # 训练步数
-    batch_size: int = 64
-    replay_memory_size: int = 10000
-    epsilon_start: float = 1.0
-    epsilon_end: float = 0.001
-    epsilon_decay = 0.999999
-    update_steps:int = 1000
-    learning_rate: float = 1e-4
-
-
+    gamma: float = 0.995  # decay rate of past observations
+    train_steps: int = 1000000  # 训练步数
+    batch_size: int = 256
+    replay_memory_size: int = 1024000
+    # epsilon_start: float = 0.3
+    # epsilon_end: float = 0.001
+    # epsilon_decay = 0.999999
+    update_steps: int = 5000
+    learning_rate: float = 1e-5
+    frames: int = 4
+    decision_interval: int = 8
+    tau_start: float = 0.5  # 初始温度
+    tau_end: float = 0.01  # 最小温度
+    tau_decay: float = 0.999999  # 温度衰减率
 
 
 def get_argparser_for_model_arguments():
@@ -71,7 +75,8 @@ def generate_argparser_from_dataclass(dataclass_type: Type[Any]) -> argparse.Arg
         if default is dataclasses.MISSING and default_factory is None:
             parser.add_argument(f'--{field_name}', type=arg_type, nargs=nargs, required=True)
         else:
-            parser.add_argument(f'--{field_name}', type=arg_type, nargs=nargs, default=default_factory() if default_factory else default)
+            parser.add_argument(f'--{field_name}', type=arg_type, nargs=nargs,
+                                default=default_factory() if default_factory else default)
 
     return parser
 
