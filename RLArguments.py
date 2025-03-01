@@ -27,9 +27,9 @@ from typing import Type, Any
 @dataclass
 class RLArguments:
     mode: str = "train"  # 训练还是玩
-    model_class: str = "SiglipBertMMMoCoV2"  # 网络类
-    load_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model.pth"
-    save_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model.pth"
+    # model_class: str = "SiglipBertMMMoCoV2"  # 网络类
+    load_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model_simple.pth"
+    save_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model_simple.pth"
     mixed_precision: str = None
     gamma: float = 0.995  # decay rate of past observations
     train_steps: int = 1000000  # 训练步数
@@ -38,10 +38,11 @@ class RLArguments:
     # epsilon_start: float = 0.3
     # epsilon_end: float = 0.001
     # epsilon_decay = 0.999999
-    update_steps: int = 5000
-    learning_rate: float = 1e-5
-    frames: int = 4
-    decision_interval: int = 8
+    update_steps: int = 1000
+    learning_rate: float = 3e-4
+    weight_decay:float = 1e-4
+    state_frames: int = 4
+    decision_interval: int = 4
     tau_start: float = 0.5  # 初始温度
     tau_end: float = 0.01  # 最小温度
     tau_decay: float = 0.999999  # 温度衰减率

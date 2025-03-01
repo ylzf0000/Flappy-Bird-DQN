@@ -21,15 +21,15 @@ class DeepNetWorkV1(nn.Module):
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.mha = nn.MultiheadAttention(180, 6, 0.0, batch_first=True)
+    def __init__(self, embed_dim, num_heads):
+        super().__init__()
+        self.mha = nn.MultiheadAttention(embed_dim, num_heads, 0.1, batch_first=True)
         self.fc = nn.Sequential(
-            nn.Linear(180, 180 * 4),
+            nn.Linear(embed_dim, embed_dim * 4),
             nn.GELU(),
-            nn.Linear(180 * 4, 180),
+            nn.Linear(embed_dim * 4, embed_dim),
         )
-        self.norm = nn.RMSNorm(normalized_shape=180)
+        self.norm = nn.RMSNorm(normalized_shape=embed_dim)
 
     def forward(self, x):
         x_norm = self.norm(x)
@@ -60,6 +60,65 @@ class DeepNetWorkV2(nn.Module):
         x = self.norm(x)
         x = self.fc(x).squeeze()
         return x
+
+
+class DuelingDeepNetwork(nn.Module):
+    def __init__(self, layer_num, seq_len, input_dim, embed_dim, num_heads):
+        super().__init__()
+        self.fc1 = nn.Linear(input_dim, embed_dim)
+        self.positional_embedding = nn.Embedding(seq_len, embed_dim)
+        self.transformers = nn.ModuleList(
+            [TransformerBlock(embed_dim=embed_dim, num_heads=num_heads) for _ in range(layer_num)])
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(embed_dim, 16),
+            nn.GELU(),
+            nn.Linear(16, 2),
+        )
+        self.value_stream = nn.Sequential(
+            nn.Linear(embed_dim, 16),
+            nn.GELU(),
+            nn.Linear(16, 1),
+        )
+        self.norm = nn.RMSNorm(normalized_shape=embed_dim)
+
+    def forward(self, x):  # B, len, dim
+        x = self.fc1(x)
+        b, seq_len, dim = x.size()
+        pos = torch.arange(seq_len, device=x.device).unsqueeze(0)
+        x = x + self.positional_embedding(pos)
+        for transformer in self.transformers:
+            x = transformer(x)
+        x = nn.AdaptiveAvgPool1d(1)(x.transpose(1, 2).contiguous()).squeeze()
+        values = self.value_stream(x)
+        advantages = self.advantage_stream(x)
+        q_values = values + (advantages - advantages.mean())
+        return q_values.squeeze()
+
+
+class DuelingDeepNetworkSimple(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.feature = nn.Sequential(
+            nn.Linear(input_dim, 128),
+            nn.GELU()
+        )
+        self.value_stream = nn.Sequential(
+            nn.Linear(128, 64),
+            nn.GELU(),
+            nn.Linear(64, 1)
+        )
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(128, 64),
+            nn.GELU(),
+            nn.Linear(64, 2)
+        )
+
+    def forward(self, x):
+        features = self.feature(x)
+        values = self.value_stream(features)
+        advantages = self.advantage_stream(features)
+        q_values = values + (advantages - advantages.mean())
+        return q_values
 
 
 class DeepNetWork(nn.Module):
