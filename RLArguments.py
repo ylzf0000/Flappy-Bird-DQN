@@ -27,28 +27,29 @@ class RLArguments:
     mode: str = "train"
     render_mode: str = "rgb_array"
     wandb_project: str = "AgentDQN"
-    wandb_name: str = None
+    experience_name: str = None
     model_class: str = "DuelingDeepNetworkSimpleV2"  # 网络类
     load_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model_simple_cos.pth"
-    model_name: str = None
     save_model_steps: int = 100000
     greedy_episodes: int = 100 # 每隔greddy_episodes回合进行贪心动作
     # save_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model_simple_cos.pth"
     mixed_precision: str = None
-    gamma: float = 0.995  # decay rate of past observations
+    gamma: float = 0.99  # decay rate of past observations
     train_steps: int = 1000000  # 训练步数
     batch_size: int = 256
-    replay_memory_size: int = 1024000
+    replay_memory_size: int = 102400
     # epsilon_start: float = 0.3
     # epsilon_end: float = 0.001
     # epsilon_decay = 0.999999
     target_net_update_steps: int = 1000
+    target_net_update_tau: float = 0.005
     learning_rate: float = 1e-5
     weight_decay:float = 1e-4
     state_frames: int = 4
     decision_interval: int = 4
+    decision_interval_percent: float = 0.2 # 前decision_interval_percent*train_steps次迭代才使用decision_interval
     tau_start: float = 1.0  # 初始温度
-    tau_end: float = 0.001  # 最小温度
+    tau_end: float = 0.01  # 最小温度
     # tau_decay: float = 0.999999  # 温度衰减率
 
 
