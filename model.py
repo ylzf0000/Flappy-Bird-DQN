@@ -99,16 +99,16 @@ class DuelingDeepNetworkSimple(nn.Module):
     def __init__(self, input_dim):
         super().__init__()
         self.feature = nn.Sequential(
-            nn.Linear(input_dim, 128),
+            nn.Linear(input_dim, 256),
             nn.GELU()
         )
         self.value_stream = nn.Sequential(
-            nn.Linear(128, 64),
+            nn.Linear(256, 64),
             nn.GELU(),
             nn.Linear(64, 1)
         )
         self.advantage_stream = nn.Sequential(
-            nn.Linear(128, 64),
+            nn.Linear(256, 64),
             nn.GELU(),
             nn.Linear(64, 2)
         )
@@ -120,6 +120,75 @@ class DuelingDeepNetworkSimple(nn.Module):
         q_values = values + (advantages - advantages.mean())
         return q_values
 
+
+class DuelingDeepNetworkSimpleV2(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        dim = 256
+        multiply = 4
+        self.feature = nn.Sequential(
+            nn.Linear(input_dim, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(dim, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+        )
+        self.value_stream = nn.Sequential(
+            nn.Linear(dim, dim // multiply),
+            nn.LayerNorm(dim // multiply),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(dim // multiply, 1)
+        )
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(dim, dim // multiply),
+            nn.LayerNorm(dim // multiply),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(dim // multiply, 2)
+        )
+
+    def forward(self, x):
+        features = self.feature(x)
+        values = self.value_stream(features)
+        advantages = self.advantage_stream(features)
+        q_values = values + (advantages - advantages.mean())
+        return q_values
+
+class DuelingDeepNetworkSimpleV3(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        dim = 256
+        multiply = 4
+        self.feature = nn.Sequential(
+            nn.Linear(input_dim, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+            nn.Linear(dim, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+        )
+        self.value_stream = nn.Sequential(
+            nn.Linear(dim, dim // multiply),
+            nn.LayerNorm(dim // multiply),
+            nn.GELU(),
+            nn.Linear(dim // multiply, 1)
+        )
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(dim, dim // multiply),
+            nn.LayerNorm(dim // multiply),
+            nn.GELU(),
+            nn.Linear(dim // multiply, 2)
+        )
+
+    def forward(self, x):
+        features = self.feature(x)
+        values = self.value_stream(features)
+        advantages = self.advantage_stream(features)
+        q_values = values + (advantages - advantages.mean())
+        return q_values
 
 class DeepNetWork(nn.Module):
     """  神经网络结构

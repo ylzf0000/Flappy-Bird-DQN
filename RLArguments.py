@@ -1,8 +1,6 @@
 import argparse
 import dataclasses
-from dataclasses import dataclass, field, fields
-from email.policy import default
-from optparse import OptionParser
+from dataclasses import dataclass, fields
 from typing import Type, Any
 
 
@@ -26,10 +24,16 @@ from typing import Type, Any
 
 @dataclass
 class RLArguments:
-    mode: str = "train"  # 训练还是玩
-    # model_class: str = "SiglipBertMMMoCoV2"  # 网络类
-    load_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model_simple.pth"
-    save_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model_simple.pth"
+    mode: str = "train"
+    render_mode: str = "rgb_array"
+    wandb_project: str = "AgentDQN"
+    wandb_name: str = None
+    model_class: str = "DuelingDeepNetworkSimpleV2"  # 网络类
+    load_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model_simple_cos.pth"
+    model_name: str = None
+    save_model_steps: int = 100000
+    greedy_episodes: int = 100 # 每隔greddy_episodes回合进行贪心动作
+    # save_model_checkpoint: str = r"D:\Github\Flappy-Bird-DQN\model_simple_cos.pth"
     mixed_precision: str = None
     gamma: float = 0.995  # decay rate of past observations
     train_steps: int = 1000000  # 训练步数
@@ -38,14 +42,14 @@ class RLArguments:
     # epsilon_start: float = 0.3
     # epsilon_end: float = 0.001
     # epsilon_decay = 0.999999
-    update_steps: int = 1000
-    learning_rate: float = 3e-4
+    target_net_update_steps: int = 1000
+    learning_rate: float = 1e-5
     weight_decay:float = 1e-4
     state_frames: int = 4
     decision_interval: int = 4
-    tau_start: float = 0.5  # 初始温度
-    tau_end: float = 0.01  # 最小温度
-    tau_decay: float = 0.999999  # 温度衰减率
+    tau_start: float = 1.0  # 初始温度
+    tau_end: float = 0.001  # 最小温度
+    # tau_decay: float = 0.999999  # 温度衰减率
 
 
 def get_argparser_for_model_arguments():
