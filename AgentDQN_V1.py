@@ -96,7 +96,7 @@ class AgentDQN_V1:
 
         # 计算Q值
         current_q: torch.tensor = self.policy_net(states).gather(1, actions.unsqueeze(1)).squeeze()
-
+        # Double DQN
         next_actions = self.policy_net(next_states).argmax(1)
         next_q = self.target_net(next_states).gather(1, next_actions.unsqueeze(1)).squeeze().detach()
 
@@ -192,36 +192,19 @@ class AgentDQN_V1:
                     # "epsilon": self.epsilon,
                 })
 
-    # def get_action(self, env, state):
-    #     self.frame_counter += 1
-    #     if self.frame_counter % self.args.decision_interval != 0:
-    #         return 0  # 非决策帧不跳跃
-    #
-    #     # 选择动作（ε-greedy）
-    #     r = np.random.rand()
-    #     if r < self.epsilon:
-    #         action = env.action_space.sample()  # 随机探索
-    #     else:
-    #         with torch.no_grad():
-    #             state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
-    #             q_values = self.policy_net(state_tensor)
-    #             action = q_values.argmax().item()
-    #     return action
+
     def test(self):
         env = self.flappy_bird_env
         state, _ = self.flappy_bird_env.reset()
         total_reward = 0
-        zz = 0
+        pipe = 0
         terminated = False
         while not terminated:
             action = self.get_action_greedy(state)
-
-            # 执行动作
             next_state, reward, terminated, info, done = env.step(action)
             total_reward += reward
-            if reward >= 1.0:
-                zz += 1
-            print(f'zz: {zz}, total_reward: {total_reward}')
+            pipe += int(reward >= 1.0)
+            self.log(f'pipe: {pipe}, total_reward: {total_reward}')
             state = next_state
 
     def get_action_greedy(self, state):
@@ -242,7 +225,21 @@ class AgentDQN_V1:
             state_tensor = torch.FloatTensor(np.array(state)).unsqueeze(0).to(self.device)
             q_values = self.policy_net(state_tensor)
         return q_values
-
+    # def get_action(self, env, state):
+    #     self.frame_counter += 1
+    #     if self.frame_counter % self.args.decision_interval != 0:
+    #         return 0  # 非决策帧不跳跃
+    #
+    #     # 选择动作（ε-greedy）
+    #     r = np.random.rand()
+    #     if r < self.epsilon:
+    #         action = env.action_space.sample()  # 随机探索
+    #     else:
+    #         with torch.no_grad():
+    #             state_tensor = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+    #             q_values = self.policy_net(state_tensor)
+    #             action = q_values.argmax().item()
+    #     return action
 
 def main():
     parser = get_argparser_for_model_arguments()
