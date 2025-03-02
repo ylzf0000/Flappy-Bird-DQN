@@ -13,6 +13,7 @@ from RLArguments import get_argparser_for_model_arguments, RLArguments
 import flappy_bird_gymnasium
 import gymnasium
 from model import *
+from util import init_logger, seed_everything, count_parameters
 
 
 class ReplayMemory:
@@ -42,7 +43,9 @@ class AgentDQN_V1:
         self.args = args
         self.tau = self.args.tau_start
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        self.start_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        logger, formatted_time = init_logger("logger", self.args.model_name)
+        self.logger = logger
+        self.start_time = formatted_time
         self.flappy_bird_env = gymnasium.make("FlappyBird-v0", render_mode=self.args.render_mode, use_lidar=False)
         self.memory = ReplayMemory(args.replay_memory_size)  # init some parameters
         self.policy_net = eval(self.args.model_class)(input_dim=12).to(self.device)
@@ -56,6 +59,10 @@ class AgentDQN_V1:
         self.scheduler = CosineAnnealingLR(self.optimizer,
                                            T_max=int(1e6),
                                            eta_min=1e-8)
+        seed_everything(42)
+
+    def log(self, *args, **kwargs):
+        self.logger.info(*args, **kwargs)
 
     def save_model(self, global_time_step):
         model_name = self.args.model_name
@@ -66,14 +73,14 @@ class AgentDQN_V1:
         filename = f'{global_time_step}.pth'
         path = os.path.join(dir, filename)
         torch.save(self.policy_net.state_dict(), path)
-        print(f"save model param to {path}.")
+        self.log(f"save model param to {path}.")
 
     def load_model(self):
         if self.args.load_model_checkpoint and os.path.exists(self.args.load_model_checkpoint):
             d = torch.load(self.args.load_model_checkpoint, weights_only=True)
             self.policy_net.load_state_dict(d)
             self.target_net.load_state_dict(d)
-            print(f"load model param from {self.args.load_model_checkpoint}.")
+            self.log(f"load model param from {self.args.load_model_checkpoint}.")
 
     def train_one_batch(self):
         # 从缓冲区采样
@@ -104,7 +111,7 @@ class AgentDQN_V1:
             "current_q": current_q.mean(),
             "target_q": target_q.mean(),
             "delta_q": target_q.mean() - current_q.mean(),
-            "lr": self.scheduler.get_last_lr()[0]
+            "lr": self.scheduler.get_last_lr()[0],
         })
 
         # 反向传播
@@ -123,6 +130,7 @@ class AgentDQN_V1:
     def train(self):
         config = asdict(self.args)
         config["model_struct"] = str(self.target_net)
+        config["count_parameters"] = count_parameters(self.policy_net),
         self.wandb = wandb.init(
             project=self.args.wandb_project,
             name=self.args.wandb_name,
@@ -146,14 +154,15 @@ class AgentDQN_V1:
                     action = 0
                 elif episode % self.args.greedy_episodes == 0:
                     action = self.get_action_greedy(state)
-                    print(f"global_time_step: {global_time_step}, local_time_step: {local_time_step}, greedy_action: {action}")
+                    self.log(
+                        f"episode: {episode}, GTS: {global_time_step}, LTS: {local_time_step}, greedy_action: {action}")
                 else:
                     probabilities, action = self.get_action_softmax_sample(state)
-                    print(f"global_time_step: {global_time_step}, local_time_step: {local_time_step}, action_probabilities", probabilities.cpu().detach().numpy())
+                    self.log(
+                        f"episode: {episode}, GTS: {global_time_step}, LTS: {local_time_step}, AP: {probabilities.cpu().detach().numpy()}")
 
                 next_state, reward, terminated, _, info = env.step(action)
                 next_state = np.array(next_state)
-                # print(f'reward: {reward}, terminated: {terminated}')
                 total_reward += reward
                 # 存储经验
                 self.memory.push(state, action, reward, next_state, terminated)
@@ -182,7 +191,6 @@ class AgentDQN_V1:
                     "tau": self.tau
                     # "epsilon": self.epsilon,
                 })
-                # print(f"TimeStep: {global_time_step}, Episode: {episode},  Reward: {total_reward}, Epsilon: {self.epsilon:.2f}")
 
     # def get_action(self, env, state):
     #     self.frame_counter += 1
