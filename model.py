@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class DeepNetWorkV1(nn.Module):
@@ -157,12 +158,14 @@ class DuelingDeepNetworkSimpleV2(nn.Module):
         q_values = values + (advantages - advantages.mean())
         return q_values
 
+
 class DuelingDeepNetworkSimpleV3(nn.Module):
     def __init__(self, input_dim):
         super().__init__()
-        dim = 256
+        dim = 512
         multiply = 4
-        self.feature = nn.Sequential(
+
+        self.feature1 = nn.Sequential(
             nn.Linear(input_dim, dim),
             nn.LayerNorm(dim),
             nn.GELU(),
@@ -170,25 +173,91 @@ class DuelingDeepNetworkSimpleV3(nn.Module):
             nn.LayerNorm(dim),
             nn.GELU(),
         )
+        self.feature2 = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+        )
         self.value_stream = nn.Sequential(
             nn.Linear(dim, dim // multiply),
-            nn.LayerNorm(dim // multiply),
+            # nn.LayerNorm(dim // multiply),
             nn.GELU(),
             nn.Linear(dim // multiply, 1)
         )
         self.advantage_stream = nn.Sequential(
             nn.Linear(dim, dim // multiply),
-            nn.LayerNorm(dim // multiply),
+            # nn.LayerNorm(dim // multiply),
             nn.GELU(),
             nn.Linear(dim // multiply, 2)
         )
 
     def forward(self, x):
-        features = self.feature(x)
+        features = self.feature1(x)
+        features = features + self.feature2(features)
         values = self.value_stream(features)
         advantages = self.advantage_stream(features)
         q_values = values + (advantages - advantages.mean())
         return q_values
+
+
+class DuelingDeepNetworkSimpleV4(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        dim = 512
+        multiply = 4
+        self.fc1 = nn.Sequential(
+            nn.Linear(input_dim, dim),
+            nn.LayerNorm(dim),
+            nn.GELU()
+        )
+        self.fc2 = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+        )
+        self.fc3 = nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.LayerNorm(dim),
+            nn.GELU(),
+        )
+        self.value_stream = nn.Sequential(
+            nn.Linear(dim, dim // multiply),
+            # nn.LayerNorm(dim // multiply),
+            nn.GELU(),
+            nn.Linear(dim // multiply, 1)
+        )
+        self.advantage_stream = nn.Sequential(
+            nn.Linear(dim, dim // multiply),
+            # nn.LayerNorm(dim // multiply),
+            nn.GELU(),
+            nn.Linear(dim // multiply, 2)
+        )
+
+    def forward(self, x):
+        features1 = self.fc1(x)
+        features2 = features1 + self.fc2(features1)
+        features3 = features2 + self.fc3(features2)
+        values = self.value_stream(features3)
+        advantages = self.advantage_stream(features3)
+        q_values = values + (advantages - advantages.mean())
+        return q_values
+
+
+class DQN(nn.Module):
+    def __init__(self, input_dim=12, action_dim=2):
+        super(DQN, self).__init__()
+        self.fc1 = nn.Linear(input_dim, 128)
+        self.bn1 = nn.LayerNorm(128)  # 批量归一化加速收敛
+        self.fc2 = nn.Linear(128, 64)
+        self.dropout = nn.Dropout(p=0.1)  # 防止过拟合
+        self.fc3 = nn.Linear(64, action_dim)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = F.relu(self.bn1(x))
+        x = self.dropout(F.relu(self.fc2(x)))
+        return self.fc3(x)
+
 
 class DeepNetWork(nn.Module):
     """  神经网络结构
@@ -224,3 +293,23 @@ class DeepNetWork(nn.Module):
         x = x.view(x.size(0), -1)
         x = self.fc1(x)
         return self.out(x)
+class ActorCritic(nn.Module):
+    def __init__(self, state_dim=12, action_dim=2, hidden_dim=256):
+        super().__init__()
+        # Shared Feature Extractor
+        self.shared = nn.Sequential(
+            nn.Linear(state_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU()
+        )
+        # Actor Network (Policy)
+        self.actor = nn.Linear(hidden_dim, action_dim)
+        # Critic Network (Value)
+        self.critic = nn.Linear(hidden_dim, 1)
+
+    def forward(self, x):
+        x = self.shared(x)
+        logits = self.actor(x)
+        value = self.critic(x)
+        return logits, value
